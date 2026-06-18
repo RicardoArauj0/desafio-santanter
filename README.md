@@ -1,3 +1,25 @@
++-----------------+            +-------------------------------------------------------+
+|                 |            |               Aplicação Spring Boot                   |
+|  Postman /      |  HTTP POST |  +--------------------+                               |
+|  Client HTTP    |----------->|  | BuscaCEPController |                               |
+|                 |            |  +--------------------+                               |
++-----------------+            |            |                                          |
+                               |            v                                          |
+                               |  +--------------------+                               |
+                               |  |  BuscaCEPService   |                               |
+                               |  +--------------------+                               |
+                               |     /              \                                  |
+                               +----/----------------\---------------------------------+
+                                   /                  \
+                                  v                    v  HTTP GET (RestClient)
+                      +-------------------+    +--------------------+
+                      |   MySQL (Docker)  |    | WireMock (Docker)  |
+                      |  (Tabelas: Cache  |    | (Simulador da      |
+                      |    e Log Audit)   |    |  API Externa)      |
+                      +-------------------+    +--------------------+
+
+
+
 # API de Busca de CEP
 
 ## Sobre o Projeto
