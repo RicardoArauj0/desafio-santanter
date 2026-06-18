@@ -1,0 +1,23 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/cep",
+    "queryParameters": {
+      "cep": {
+        "equalTo": "04543011"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "status": "success",
+      "endpoint": "API One",
+      "body": { "cep": "04543011", "uf": "São Paulo", "cidade": "São Paulo", "bairro": "Vila Olímpia", "logradouro":
+      "Avenida Presidente Juscelino Kubitschek" }
+    }
+  }
+}

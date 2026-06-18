@@ -1,0 +1,22 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPath": "/cep",
+    "queryParameters": {
+      "cep": {
+        "equalTo": "18090505"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "status": "success",
+      "endpoint": "API One",
+      "body": { "cep": "18090505", "uf": "São Paulo", "cidade": "Sorocaba", "bairro": "Vila Progresso", "logradouro": "Rua Pedro Alvares Cabral" }
+    }
+  }
+}
