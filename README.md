@@ -1,3 +1,7 @@
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/9408b49d-e58e-41c0-9034-a5964f85a4a2" />
+
+
+
 
 # API de Busca de CEP
 
