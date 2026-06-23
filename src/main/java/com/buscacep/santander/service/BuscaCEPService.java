@@ -8,10 +8,9 @@ import com.buscacep.santander.entity.BuscaCEPResposta;
 import com.buscacep.santander.repository.BuscaCEPLogRepository;
 import com.buscacep.santander.repository.BuscaCEPRespostaRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestClient;
 
 import java.util.List;
 import java.util.Optional;
@@ -22,15 +21,16 @@ public class BuscaCEPService {
 
     private final BuscaCEPLogRepository logRepository;
     private final BuscaCEPRespostaRepository respostaRepository;
-    private final RestClient restClient;
+    private final CEPApiClient cepApiClient;
 
+    // Usando o (O)pen close princeiple do SOLID. Aqui estou injetando a interface e se
+    // precisarmos mudar a API é só usar outra implementação sem mudar essa classe.
     public BuscaCEPService(BuscaCEPLogRepository logRepository,
                            BuscaCEPRespostaRepository respostaRepository,
-                           RestClient.Builder builder,
-                           @Value("${buscacep.api.url}") String apiUrl) {
+                           @Qualifier("wiremockBuscaClient") CEPApiClient cepApiClient) {
         this.logRepository = logRepository;
         this.respostaRepository = respostaRepository;
-        this.restClient = builder.baseUrl(apiUrl).build();
+        this.cepApiClient = cepApiClient;
     }
 
     @Transactional
@@ -55,10 +55,7 @@ public class BuscaCEPService {
         }
         try {
             log.info("Buscando CEP na API externa: {}", cep);
-            BuscaCEPRespostaAPIDTO respostaApiDTO = restClient.get()
-                    .uri("/cep?cep={cep}", cep)
-                    .retrieve()
-                    .body(BuscaCEPRespostaAPIDTO.class);
+            BuscaCEPRespostaAPIDTO respostaApiDTO = cepApiClient.buscarCep(cep);
 
             if (respostaApiDTO != null && respostaApiDTO.getResposta() != null) {
                 log.info("CEP encontrado na API externa: {}", cep);
