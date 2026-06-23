@@ -8,20 +8,22 @@ import com.buscacep.santander.entity.BuscaCEPResposta;
 import com.buscacep.santander.repository.BuscaCEPLogRepository;
 import com.buscacep.santander.repository.BuscaCEPRespostaRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.client.RestClient;
 
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,181 +36,139 @@ class BuscaCEPServiceTest {
     private BuscaCEPRespostaRepository respostaRepository;
 
     @Mock
-    private RestClient restClient;
+    private CEPApiClient cepApiClient;
 
-    @Mock
-    private RestClient.Builder restClientBuilder;
-
-    @Mock
-    private RestClient.RequestHeadersUriSpec requestHeadersUriSpec;
-
-    @Mock
-    private RestClient.RequestHeadersSpec requestHeadersSpec;
-
-    @Mock
-    private RestClient.ResponseSpec responseSpec;
-
+    @InjectMocks
     private BuscaCEPService buscaCEPService;
 
-    private final String API_URL = "http://localhost:8080";
+    private String cepValido;
+    private BuscaCEPResposta buscaCEPRespostaMock;
+    private UUID idMock;
 
     @BeforeEach
     void setUp() {
+        cepValido = "01001000";
+        idMock = UUID.randomUUID();
 
-        when(restClientBuilder.baseUrl(API_URL)).thenReturn(restClientBuilder);
-        when(restClientBuilder.build()).thenReturn(restClient);
-
-
-        buscaCEPService = new BuscaCEPService(logRepository, respostaRepository, restClientBuilder, API_URL);
-        
-
-        lenient().when(restClient.get()).thenReturn(requestHeadersUriSpec);
-        lenient().when(requestHeadersUriSpec.uri(anyString(), anyString())).thenReturn(requestHeadersSpec);
-        lenient().when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
+        buscaCEPRespostaMock = new BuscaCEPResposta();
+        buscaCEPRespostaMock.setId(idMock);
+        buscaCEPRespostaMock.setCep(cepValido);
+        buscaCEPRespostaMock.setUf("SP");
+        buscaCEPRespostaMock.setCidade("São Paulo");
+        buscaCEPRespostaMock.setLogradouro("Praça da Sé");
+        buscaCEPRespostaMock.setBairro("Sé");
     }
 
     @Test
-    void buscarCep_shouldReturnFromDatabase_whenCepExists() {
-        // Given
-        String cep = "12345-678";
-        BuscaCEPResposta cepResposta = createBuscaCEPResposta(cep);
-        when(respostaRepository.findByCep(cep)).thenReturn(Optional.of(cepResposta));
-        when(logRepository.save(any(BuscaCEPLog.class))).thenReturn(new BuscaCEPLog());
+    @DisplayName("Deve retornar CEP do Banco de Dados quando já estiver cadastrado")
+    void buscarCep_DeveRetornarDoBancoDeDados_QuandoCepExistir() {
+        // Arrange
+        when(respostaRepository.findByCep(cepValido)).thenReturn(Optional.of(buscaCEPRespostaMock));
 
-        // When
-        BuscaCEPRespostaDTO result = buscaCEPService.buscarCep(cep);
+        // Act
+        BuscaCEPRespostaDTO resultado = buscaCEPService.buscarCep(cepValido);
 
-        // Then
-        assertNotNull(result);
-        assertEquals(cep, result.getCep());
-        assertEquals(cepResposta.getId().toString(), result.getId());
-        verify(respostaRepository, times(1)).findByCep(cep);
-        verify(logRepository, times(1)).save(any(BuscaCEPLog.class));
-        verifyNoMoreInteractions(restClient);
+        // Assert
+        assertNotNull(resultado);
+        assertEquals(cepValido, resultado.getCep());
+        assertEquals("SP", resultado.getUf());
+        assertEquals(idMock.toString(), resultado.getId());
+
+        // Verifica se salvou o log histórico com a origem correta (BANCO_DE_DADOS)
+        ArgumentCaptor<BuscaCEPLog> logCaptor = ArgumentCaptor.forClass(BuscaCEPLog.class);
+        verify(logRepository, times(1)).save(logCaptor.capture());
+        assertEquals(BuscaCEPLog.BuscaCEPOrigem.BANCO_DE_DADOS, logCaptor.getValue().getOrigemBusca());
+
+        // Garante que a API externa NÃO foi chamada
+        verifyNoInteractions(cepApiClient);
     }
 
     @Test
-    void buscarCep_shouldReturnFromExternalApi_whenCepDoesNotExistInDb() {
-        // Given
-        String cep = "12345-678";
-        BuscaCEPRespostaDTO apiRespostaDTO = createBuscaCEPRespostaDTO(cep);
-        BuscaCEPRespostaAPIDTO apiResponseWrapper = new BuscaCEPRespostaAPIDTO();
-        apiResponseWrapper.setResposta(apiRespostaDTO);
+    @DisplayName("Deve buscar CEP na API externa e salvar no banco quando não encontrar localmente")
+    void buscarCep_DeveBuscarNaApiESalvar_QuandoCepNaoExistirNoBanco() {
+        // Arrange
+        when(respostaRepository.findByCep(cepValido)).thenReturn(Optional.empty());
 
-        when(respostaRepository.findByCep(cep)).thenReturn(Optional.empty());
-        when(restClient.get()).thenReturn(requestHeadersUriSpec);
-        when(requestHeadersUriSpec.uri(anyString(), eq(cep))).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.body(BuscaCEPRespostaAPIDTO.class)).thenReturn(apiResponseWrapper);
-
-        BuscaCEPResposta savedCepResposta = createBuscaCEPResposta(cep);
-        when(respostaRepository.save(any(BuscaCEPResposta.class))).thenReturn(savedCepResposta);
-        when(logRepository.save(any(BuscaCEPLog.class))).thenReturn(new BuscaCEPLog());
-
-        // When
-        BuscaCEPRespostaDTO result = buscaCEPService.buscarCep(cep);
-
-        // Then
-        assertNotNull(result);
-        assertEquals(cep, result.getCep());
-        assertEquals(savedCepResposta.getId().toString(), result.getId());
-        verify(respostaRepository, times(1)).findByCep(cep);
-        verify(restClient, times(1)).get();
-        verify(responseSpec, times(1)).body(BuscaCEPRespostaAPIDTO.class);
-        verify(respostaRepository, times(1)).save(any(BuscaCEPResposta.class));
-        verify(logRepository, times(1)).save(any(BuscaCEPLog.class));
-    }
-
-    @Test
-    void buscarCep_shouldThrowException_whenExternalApiReturnsNullResponse() {
-        // Given
-        String cep = "12345-678";
-        when(respostaRepository.findByCep(cep)).thenReturn(Optional.empty());
-        when(restClient.get()).thenReturn(requestHeadersUriSpec);
-        when(requestHeadersUriSpec.uri(anyString(), eq(cep))).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.body(BuscaCEPRespostaAPIDTO.class)).thenReturn(null); // API returns null
-
-        // When / Then
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> buscaCEPService.buscarCep(cep));
-        assertEquals("CEP não encontrado: " + cep, exception.getMessage());
-        verify(respostaRepository, times(1)).findByCep(cep);
-        verify(restClient, times(1)).get();
-        verify(responseSpec, times(1)).body(BuscaCEPRespostaAPIDTO.class);
-        verify(respostaRepository, never()).save(any(BuscaCEPResposta.class));
-        verify(logRepository, never()).save(any(BuscaCEPLog.class));
-    }
-
-    @Test
-    void buscarCep_shouldThrowException_whenExternalApiCallFails() {
-        // Given
-        String cep = "12345-678";
-        when(respostaRepository.findByCep(cep)).thenReturn(Optional.empty());
-        when(restClient.get()).thenReturn(requestHeadersUriSpec);
-        when(requestHeadersUriSpec.uri(anyString(), eq(cep))).thenReturn(requestHeadersSpec);
-        when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
-        when(responseSpec.body(BuscaCEPRespostaAPIDTO.class)).thenThrow(new RuntimeException("API error"));
-
-        // When / Then
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> buscaCEPService.buscarCep(cep));
-        assertTrue(exception.getMessage().contains("Erro ao consultar CEP: API error"));
-        verify(respostaRepository, times(1)).findByCep(cep);
-        verify(restClient, times(1)).get();
-        verify(responseSpec, times(1)).body(BuscaCEPRespostaAPIDTO.class);
-        verify(respostaRepository, never()).save(any(BuscaCEPResposta.class));
-        verify(logRepository, never()).save(any(BuscaCEPLog.class));
-    }
-
-    @Test
-    void buscaCEPLogDTOList_shouldReturnListOfLogs() {
-        // Given
-        BuscaCEPResposta cepResposta = createBuscaCEPResposta("12345-678");
-        BuscaCEPLog log1 = createBuscaCEPLog("12345-678", cepResposta, BuscaCEPLog.BuscaCEPOrigem.BANCO_DE_DADOS);
-        BuscaCEPLog log2 = createBuscaCEPLog("87654-321", cepResposta, BuscaCEPLog.BuscaCEPOrigem.API_EXTERNA);
-        List<BuscaCEPLog> logs = List.of(log1, log2);
-
-        when(logRepository.findAll()).thenReturn(logs);
-
-        // When
-        List<BuscaCEPLogDTO> result = buscaCEPService.buscaCEPLogDTOList();
-
-        // Then
-        assertNotNull(result);
-        assertEquals(2, result.size());
-        assertEquals(log1.getCep(), result.get(0).getCep());
-        assertEquals(log2.getCep(), result.get(1).getCep());
-        verify(logRepository, times(1)).findAll();
-    }
-
-    private BuscaCEPResposta createBuscaCEPResposta(String cep) {
-        BuscaCEPResposta resposta = new BuscaCEPResposta();
-        resposta.setId(UUID.randomUUID());
-        resposta.setCep(cep);
-        resposta.setUf("SP");
-        resposta.setCidade("Sao Paulo");
-        resposta.setLogradouro("Rua Teste");
-        resposta.setBairro("Bairro Teste");
-        return resposta;
-    }
-
-    private BuscaCEPRespostaDTO createBuscaCEPRespostaDTO(String cep) {
-        return BuscaCEPRespostaDTO.builder()
-                .id(UUID.randomUUID().toString())
-                .cep(cep)
+        BuscaCEPRespostaDTO apiRespostaDTO = BuscaCEPRespostaDTO.builder()
+                .cep(cepValido)
                 .uf("SP")
-                .cidade("Sao Paulo")
-                .logradouro("Rua Teste API")
-                .bairro("Bairro Teste API")
+                .cidade("São Paulo")
+                .logradouro("Praça da Sé")
+                .bairro("Sé")
                 .build();
+
+        BuscaCEPRespostaAPIDTO apiDTOWrapper = new BuscaCEPRespostaAPIDTO();
+        apiDTOWrapper.setResposta(apiRespostaDTO);
+
+        when(cepApiClient.buscarCep(cepValido)).thenReturn(apiDTOWrapper);
+        when(respostaRepository.save(any(BuscaCEPResposta.class))).thenReturn(buscaCEPRespostaMock);
+
+        // Act
+        BuscaCEPRespostaDTO resultado = buscaCEPService.buscarCep(cepValido);
+
+        // Assert
+        assertNotNull(resultado);
+        assertEquals(idMock.toString(), resultado.getId());
+        verify(respostaRepository, times(1)).save(any(BuscaCEPResposta.class));
+
+        // Verifica se salvou o log com a origem correta (API_EXTERNA)
+        ArgumentCaptor<BuscaCEPLog> logCaptor = ArgumentCaptor.forClass(BuscaCEPLog.class);
+        verify(logRepository, times(1)).save(logCaptor.capture());
+        assertEquals(BuscaCEPLog.BuscaCEPOrigem.API_EXTERNA, logCaptor.getValue().getOrigemBusca());
     }
 
-    private BuscaCEPLog createBuscaCEPLog(String cep, BuscaCEPResposta resposta, BuscaCEPLog.BuscaCEPOrigem origem) {
-        BuscaCEPLog log = new BuscaCEPLog();
-        log.setId(UUID.randomUUID());
-        log.setCep(cep);
-        log.setDataConsulta(Instant.now());
-        log.setOrigemBusca(origem);
-        log.setBuscaCEPResposta(resposta);
-        return log;
+    @Test
+    @DisplayName("Deve lançar RuntimeException quando a API externa retornar null ou vazia")
+    void buscarCep_DeveLancarException_QuandoApiRetornarRespostaNula() {
+        // Arrange
+        when(respostaRepository.findByCep(cepValido)).thenReturn(Optional.empty());
+        when(cepApiClient.buscarCep(cepValido)).thenReturn(null);
+
+        // Act & Assert
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            buscaCEPService.buscarCep(cepValido);
+        });
+
+        assertTrue(exception.getMessage().contains("CEP não encontrado"));
+        verify(respostaRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Deve lançar RuntimeException contendo o erro original caso a API falhe")
+    void buscarCep_DeveLancarException_QuandoApiFalhar() {
+        // Arrange
+        when(respostaRepository.findByCep(cepValido)).thenReturn(Optional.empty());
+        when(cepApiClient.buscarCep(cepValido)).thenThrow(new RuntimeException("Timeout de Conexão"));
+
+        // Act & Assert
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            buscaCEPService.buscarCep(cepValido);
+        });
+
+        assertTrue(exception.getMessage().contains("Erro ao consultar CEP: Timeout de Conexão"));
+    }
+
+    @Test
+    @DisplayName("Deve retornar uma lista de Logs DTO devidamente mapeados")
+    void buscaCEPLogDTOList_DeveRetornarListaDeLogsMapeados() {
+        // Arrange
+        BuscaCEPLog logEntidade = new BuscaCEPLog();
+        logEntidade.setId(UUID.randomUUID());
+        logEntidade.setCep(cepValido);
+        logEntidade.setDataConsulta(Instant.now());
+        logEntidade.setOrigemBusca(BuscaCEPLog.BuscaCEPOrigem.BANCO_DE_DADOS);
+        logEntidade.setBuscaCEPResposta(buscaCEPRespostaMock);
+
+        when(logRepository.findAll()).thenReturn(Collections.singletonList(logEntidade));
+
+        // Act
+        List<BuscaCEPLogDTO> resultado = buscaCEPService.buscaCEPLogDTOList();
+
+        // Assert
+        assertNotNull(resultado);
+        assertEquals(1, resultado.size());
+        assertEquals(cepValido, resultado.get(0).getCep());
+        assertEquals("BANCO_DE_DADOS", resultado.get(0).getOrigemBusca());
+        assertNotNull(resultado.get(0).getBuscaCEPRespostaDTO());
     }
 }
